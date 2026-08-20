@@ -145,12 +145,13 @@ PAGE = r"""<!DOCTYPE html>
 <header>
   <h1 id="docname">__TITLE__</h1>
   <span id="status" class="hint" style="margin:0"></span>
+  <button id="copyBtn" class="primary">Copy for Docs</button>
   <button id="dlBtn">Download .md</button>
   <button id="reloadBtn">Reload from file</button>
 </header>
 <div class="wrap">
   <main>
-    <p class="hint">Click any text to edit it · select text to comment · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment</p>
+    <p class="hint">Click any text to edit it · select text to comment · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment · <b style="color:var(--accent)">Copy for Docs</b> copies clean rich text for Google Docs (whole doc, or just the blocks you have selected)</p>
     <div id="preview" class="doc"></div>
   </main>
   <aside><h2>Comments (<span id="ccount">0</span>)</h2><div id="comments"></div></aside>
@@ -333,6 +334,75 @@ setInterval(async()=>{
     if(s.markdown!==lastLoaded){ STATE=s; lastLoaded=s.markdown; blocks=splitBlocks(s.markdown); renderDoc(); renderComments(); setStatus('updated'); }
   }catch(_){}
 },2500);
+
+// --- Copy for Docs: clean rich-text export that pastes well into Google Docs ---
+// Rebuilt from the markdown source (not the styled DOM), so no block wrappers,
+// no hover/highlight backgrounds, explicit fonts and paragraph spacing.
+function stripCritic(md){
+  return md
+    .replace(/\{~~([\s\S]*?)~>([\s\S]*?)~~\}/g,'$2')
+    .replace(/\{\+\+([\s\S]*?)\+\+\}/g,'$1')
+    .replace(/\{--[\s\S]*?--\}/g,'')
+    .replace(/\{==([\s\S]*?)==\}/g,'$1')
+    .replace(/\{>>[\s\S]*?<<\}/g,'');
+}
+const X_FONT="'IBM Plex Sans',Arial,sans-serif";
+const X_MONO="'IBM Plex Mono',Courier,monospace";
+const X_STYLES={
+  P:'margin:0 0 10pt 0;font-size:11pt;line-height:1.4;',
+  LI:'margin:0 0 4pt 0;font-size:11pt;line-height:1.4;',
+  UL:'margin:0 0 10pt 0;padding-left:24pt;',
+  OL:'margin:0 0 10pt 0;padding-left:24pt;',
+  H1:'margin:0 0 12pt 0;font-size:20pt;font-weight:700;line-height:1.25;',
+  H2:'margin:14pt 0 10pt 0;font-size:16pt;font-weight:700;line-height:1.25;',
+  H3:'margin:12pt 0 8pt 0;font-size:13pt;font-weight:700;line-height:1.25;',
+  H4:'margin:10pt 0 8pt 0;font-size:11.5pt;font-weight:700;line-height:1.25;',
+  TABLE:'border-collapse:collapse;margin:0 0 10pt 0;',
+  TH:'border:1pt solid #999999;padding:4pt 6pt;font-size:10pt;font-weight:700;text-align:left;vertical-align:top;',
+  TD:'border:1pt solid #999999;padding:4pt 6pt;font-size:10pt;text-align:left;vertical-align:top;',
+  BLOCKQUOTE:'margin:0 0 10pt 24pt;',
+  PRE:'margin:0 0 10pt 0;font-family:'+X_MONO+';font-size:10pt;',
+  CODE:'font-family:'+X_MONO+';font-size:10pt;',
+  A:'color:#1155cc;text-decoration:underline;',
+};
+function exportHtml(md){
+  const div=document.createElement('div');
+  div.innerHTML=window.marked?marked.parse(stripCritic(md)):'<pre>'+esc(md)+'</pre>';
+  div.querySelectorAll('*').forEach(el=>{
+    el.removeAttribute('class'); el.removeAttribute('id');
+    el.setAttribute('style','font-family:'+X_FONT+';background:transparent;'+(X_STYLES[el.tagName]||''));
+  });
+  return '<div style="font-family:'+X_FONT+';font-size:11pt;background:transparent;">'+div.innerHTML+'</div>';
+}
+async function copyForDocs(){
+  if(editingIndex>=0) commitEdit();
+  let mds=null, label='whole doc';
+  const sel=window.getSelection();
+  if(sel && !sel.isCollapsed && sel.rangeCount && preview.contains(sel.anchorNode)){
+    const range=sel.getRangeAt(0); const idx=[];
+    preview.querySelectorAll('.block').forEach(b=>{ if(range.intersectsNode(b)) idx.push(parseInt(b.dataset.i,10)); });
+    if(idx.length){ mds=idx.sort((a,b)=>a-b).map(i=>blocks[i]).join('\n\n'); label=idx.length+' block'+(idx.length>1?'s':''); }
+  }
+  if(mds===null) mds=blocks.length?joinBlocks():STATE.markdown;
+  const html=exportHtml(mds), plain=stripCritic(mds);
+  try{
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html':new Blob([html],{type:'text/html'}),
+      'text/plain':new Blob([plain],{type:'text/plain'})
+    })]);
+  }catch(err){
+    const tmp=document.createElement('div'); tmp.contentEditable='true';
+    tmp.style.position='fixed'; tmp.style.left='-9999px'; tmp.innerHTML=html;
+    document.body.appendChild(tmp);
+    const r=document.createRange(); r.selectNodeContents(tmp);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    document.execCommand('copy'); tmp.remove(); s.removeAllRanges();
+  }
+  setStatus('copied for Docs ('+label+')');
+}
+// preventDefault on mousedown so clicking the button doesn't clear the text selection
+document.getElementById('copyBtn').addEventListener('mousedown',e=>e.preventDefault());
+document.getElementById('copyBtn').onclick=copyForDocs;
 
 document.getElementById('dlBtn').onclick=()=>{
   if(editingIndex>=0) commitEdit();

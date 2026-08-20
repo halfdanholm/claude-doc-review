@@ -1,0 +1,30 @@
+{
+  "_comment": "Merge into .claude/settings.json in the repo holding your documents. Committed settings are inherited by cloud sessions, so both ends sync without being told. SessionStart blocks briefly so a session never starts on stale text; Stop is async so it never makes you wait.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/sync.sh\" \"doc sync: session start\"",
+            "timeout": 45,
+            "statusMessage": "Pulling latest docs..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/scripts/sync.sh\"",
+            "timeout": 60,
+            "async": true,
+            "statusMessage": "Committing and pushing..."
+          }
+        ]
+      }
+    ]
+  }
+}

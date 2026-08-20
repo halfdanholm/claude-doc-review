@@ -1,4 +1,7 @@
+# This repo holds the tool, not documents. In YOUR documents repo, commit
+# .review/ instead — it is where review comments live.
 .review/
 __pycache__/
 *.pyc
 .DS_Store
+.git/autosync.lock/
