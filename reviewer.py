@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Local review GUI for a Markdown doc.
 
-Select text in the browser to comment (no markup to type). Click any block to edit it
-as raw Markdown in place (re-renders on blur); edits autosave. Claude's edits appear as
+Select text in the browser to comment (no markup to type). Double-click a block to edit
+it as raw Markdown in place (re-renders on blur); edits autosave. Claude's edits appear as
 tracked-change suggestions — struck-through red for removals, green for additions —
 which you can accept, reject, or comment on. Comments live in a sidecar
 (.review/<doc>.comments.json) next to the doc; suggestions live inline in the doc as
@@ -151,7 +151,7 @@ PAGE = r"""<!DOCTYPE html>
 </header>
 <div class="wrap">
   <main>
-    <p class="hint">Click any text to edit it · select text to comment · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment · <b style="color:var(--accent)">Copy for Docs</b> copies clean rich text for Google Docs (whole doc, or just the blocks you have selected)</p>
+    <p class="hint">Select text to comment · double-click a block to edit it · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment · <b style="color:var(--accent)">Copy for Docs</b> copies clean rich text for Google Docs (whole doc, or just the blocks you have selected)</p>
     <div id="preview" class="doc"></div>
   </main>
   <aside><h2>Comments (<span id="ccount">0</span>)</h2><div id="comments"></div></aside>
@@ -253,14 +253,32 @@ function scheduleSave(now){
 }
 
 preview.addEventListener('click',(e)=>{ const a=e.target.closest('a'); if(a) e.preventDefault(); });
+// Single click never edits: drag-select comments, double-click edits. A double-click
+// also selects a word, so for detail>=2 the comment popup is deferred and skipped if
+// the dblclick handler put the block into edit mode in the meantime.
+let pendingComment=null;
 preview.addEventListener('mouseup',(e)=>{ setTimeout(()=>{
   if(e.target.classList&&e.target.classList.contains('rawedit')) return;
+  if(editingIndex>=0) return;
   const sel=window.getSelection(); const q=sel.toString().trim();
-  if(q && preview.contains(sel.anchorNode)){ openComment(sel,e.pageX,e.pageY); return; }
+  if(q && preview.contains(sel.anchorNode)){
+    if(e.detail>=2){
+      clearTimeout(pendingComment);
+      pendingComment=setTimeout(()=>{ const s=window.getSelection();
+        if(editingIndex<0 && s.toString().trim() && preview.contains(s.anchorNode)) openComment(s,e.pageX,e.pageY); },300);
+    } else openComment(sel,e.pageX,e.pageY);
+    return;
+  }
   if(e.target.closest('mark.cm')) return;
   const sug=e.target.closest('.sug'); if(sug){ showSug(parseInt(sug.dataset.sid,10),e.pageX,e.pageY); return; }
-  const blk=e.target.closest('.block'); if(blk) editBlock(parseInt(blk.dataset.i,10));
 },1); });
+preview.addEventListener('dblclick',(e)=>{
+  clearTimeout(pendingComment);
+  if(e.target.classList&&e.target.classList.contains('rawedit')) return;
+  const blk=e.target.closest('.block'); if(!blk) return;
+  window.getSelection().removeAllRanges(); hidePopup(); hideSug();
+  editBlock(parseInt(blk.dataset.i,10));
+});
 
 // comment popup
 function openComment(sel,x,y){

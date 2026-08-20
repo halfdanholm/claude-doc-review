@@ -1,6 +1,6 @@
 ---
 name: doc-review
-description: Review and edit a Markdown/text document with the user, in two modes — a local browser GUI when running on their own machine (select text to comment, click a block to edit inline, autosaves), or CriticMarkup typed straight into the file when running anywhere without a reachable browser (Claude Code web, cloud sessions, CI, SSH). Use when the user wants to review/comment on a doc or draft, mark up text, edit prose, or asks to "set up doc review", "open the reviewer", or "let me comment on this file". Works on any .md/.txt file.
+description: Review and edit a Markdown/text document with the user, in two modes — a local browser GUI when running on their own machine (select text to comment, double-click a block to edit inline, autosaves), or CriticMarkup typed straight into the file when running anywhere without a reachable browser (Claude Code web, cloud sessions, CI, SSH). Use when the user wants to review/comment on a doc or draft, mark up text, edit prose, or asks to "set up doc review", "open the reviewer", or "let me comment on this file". Works on any .md/.txt file.
 ---
 
 # Doc review
@@ -38,8 +38,8 @@ Run it in the background, then tell the user to open `http://localhost:<port>`.
 Port taken (`Address already in use`)? Free it with
 `lsof -ti tcp:8042 | xargs kill -9`, or pass another `--port`.
 
-The user selects text to comment (no markup to type), and clicks any block to
-edit it as raw Markdown in place (re-renders on blur). Edits autosave. A **Copy
+The user selects text to comment (no markup to type), and double-clicks a block
+to edit it as raw Markdown in place (re-renders on blur). Edits autosave. A **Copy
 for Docs** button puts clean rich text on the clipboard for pasting into Google
 Docs — with a selection it copies just those blocks, otherwise the whole
 document. The rendered preview pulls a Markdown library from a CDN, so styling

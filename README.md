@@ -4,7 +4,7 @@ A tiny, local, dependency-free system for reviewing a Markdown document with [Cl
 
 Two parts:
 
-- **`reviewer.py`** — a local web GUI (Python stdlib only). Select text to comment, click any block to edit it inline (autosaves), download the result. Claude's edits show as suggestions: green = added, ~~struck red~~ = removed.
+- **`reviewer.py`** — a local web GUI (Python stdlib only). Select text to comment, double-click any block to edit it inline (autosaves), download the result. Claude's edits show as suggestions: green = added, ~~struck red~~ = removed.
 - **`review.py`** — the CLI Claude runs to read your comments and edits, reply, and resolve.
 
 Comments live in a sidecar file (`.review/<doc>.comments.json`) next to the document, so the Markdown itself stays clean. Suggestions live inline as [CriticMarkup](http://criticmarkup.com/) (`{++add++}`, `{--cut--}`, `{~~old~>new~~}`), which both the GUI and `review.py` understand.
@@ -24,7 +24,7 @@ python3 reviewer.py --file path/to/your-doc.md
 In the browser:
 
 - **Comment** — select any text → a box pops up → type → *Comment* (⌘/Ctrl-Enter). The marked text highlights; the comment appears in the side panel.
-- **Edit** — click any paragraph/heading/table; it becomes raw Markdown in place; click away (or Esc) and it re-renders. Edits autosave to the file.
+- **Edit** — double-click any paragraph/heading/table; it becomes raw Markdown in place; click away (or Esc) and it re-renders. Edits autosave to the file. (A single click never edits, so selecting text for a comment stays easy.)
 - **Suggestions** — Claude's edits render as green (added) / struck (removed). Click one to **Accept**, **Reject**, or **Comment**. They appear live without a reload.
 - **Copy for Docs** — clean rich text on the clipboard for pasting into Google Docs. With a selection, just those blocks.
 - **Download .md** — saves the current document.
