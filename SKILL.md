@@ -38,6 +38,10 @@ Run it in the background, then tell the user to open `http://localhost:<port>`.
 Port taken (`Address already in use`)? Free it with
 `lsof -ti tcp:8042 | xargs kill -9`, or pass another `--port`.
 
+**While the server is running, end every reply with the reviewer link** (e.g.
+`http://localhost:8042`) on its own line, so the user can always click straight
+back to the GUI without scrolling up to find it.
+
 The user selects text to comment (no markup to type), and double-clicks a block
 to edit it as raw Markdown in place (re-renders on blur). Edits autosave. A **Copy
 for Docs** button puts clean rich text on the clipboard for pasting into Google
