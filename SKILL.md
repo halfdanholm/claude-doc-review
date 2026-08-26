@@ -46,7 +46,9 @@ The user selects text to comment (no markup to type), and double-clicks a block
 to edit it as raw Markdown in place (re-renders on blur). Edits autosave. A **Copy
 for Docs** button puts clean rich text on the clipboard for pasting into Google
 Docs — with a selection it copies just those blocks, otherwise the whole
-document. The rendered preview pulls a Markdown library from a CDN, so styling
+document. **Paste from Docs** is the reverse: rich text from the clipboard is
+converted back to Markdown, replacing the selected blocks or the whole document —
+useful when the user prefers editing tables in Docs. The rendered preview pulls a Markdown library from a CDN, so styling
 needs internet; offline it falls back to raw text and commenting still works.
 
 ## CriticMarkup mode

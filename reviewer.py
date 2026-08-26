@@ -2,7 +2,9 @@
 """Local review GUI for a Markdown doc.
 
 Select text in the browser to comment (no markup to type). Double-click a block to edit
-it as raw Markdown in place (re-renders on blur); edits autosave. Claude's edits appear as
+it as raw Markdown in place (re-renders on blur); edits autosave. Copy for Docs / Paste
+from Docs round-trip the document (or selected blocks) through Google Docs as rich text —
+handy for table editing. Claude's edits appear as
 tracked-change suggestions — struck-through red for removals, green for additions —
 which you can accept, reject, or comment on. Comments live in a sidecar
 (.review/<doc>.comments.json) next to the doc; suggestions live inline in the doc as
@@ -137,6 +139,10 @@ PAGE = r"""<!DOCTYPE html>
   .pop .row { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
   #sugpop .row { margin-top:0; gap:6px; }
   #popup .qt { font-size:12px; color:var(--muted); margin-bottom:7px; max-height:48px; overflow:auto; border-left:2px solid var(--markborder); padding-left:7px; }
+  #pasteov { width:360px; position:fixed; left:50%; top:24%; transform:translateX(-50%); }
+  #pasteov .qt { font-size:12.5px; color:var(--muted); margin-bottom:8px; }
+  #pasteCatch { border:1.5px dashed var(--line); border-radius:7px; min-height:52px; padding:8px 9px; font-size:13px; color:var(--muted); outline:none; }
+  #pasteCatch:focus { border-color:var(--accent); }
   .empty { color:var(--muted); font-size:13px; }
   .hint { font-size:12px; color:var(--muted); margin:0 0 18px; } .hint b { color:var(--ins); } .hint s { color:var(--del); }
 </style>
@@ -146,12 +152,13 @@ PAGE = r"""<!DOCTYPE html>
   <h1 id="docname">__TITLE__</h1>
   <span id="status" class="hint" style="margin:0"></span>
   <button id="copyBtn" class="primary">Copy for Docs</button>
+  <button id="pasteBtn">Paste from Docs</button>
   <button id="dlBtn">Download .md</button>
   <button id="reloadBtn">Reload from file</button>
 </header>
 <div class="wrap">
   <main>
-    <p class="hint">Select text to comment · double-click a block to edit it · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment · <b style="color:var(--accent)">Copy for Docs</b> copies clean rich text for Google Docs (whole doc, or just the blocks you have selected)</p>
+    <p class="hint">Select text to comment · double-click a block to edit it · <b>green = Claude added</b>, <s>struck = Claude removed</s> — click a suggestion to accept, reject, or comment · <b style="color:var(--accent)">Copy for Docs</b> copies clean rich text for Google Docs (whole doc, or just the blocks you have selected) · <b style="color:var(--accent)">Paste from Docs</b> converts the clipboard back to Markdown, replacing the selected blocks or the whole doc</p>
     <div id="preview" class="doc"></div>
   </main>
   <aside><h2>Comments (<span id="ccount">0</span>)</h2><div id="comments"></div></aside>
@@ -165,6 +172,11 @@ PAGE = r"""<!DOCTYPE html>
 <div id="sugpop" class="pop"><div class="row">
   <button class="ok" id="sugAccept">Accept</button><button class="no" id="sugReject">Reject</button><button id="sugComment">Comment</button>
 </div></div>
+<div id="pasteov" class="pop">
+  <div class="qt" id="pasteLabel"></div>
+  <div id="pasteCatch" contenteditable="true" spellcheck="false"></div>
+  <div class="row"><button id="pasteCancel">Cancel</button></div>
+</div>
 
 <script>
 let STATE={markdown:"",comments:[]};
@@ -322,6 +334,8 @@ document.getElementById('sugComment').onclick=()=>{
 document.addEventListener('mousedown',e=>{
   if(popup.style.display==='block' && !popup.contains(e.target)) hidePopup();
   if(sugpop.style.display==='block' && !sugpop.contains(e.target) && !e.target.closest('.sug')) hideSug();
+  const pov=document.getElementById('pasteov');
+  if(pov.style.display==='block' && !pov.contains(e.target) && !e.target.closest('#pasteBtn')) hidePaste();
 });
 
 // sidebar
@@ -347,7 +361,7 @@ function renderComments(){
 
 // pick up Claude's edits to the file without a manual reload
 setInterval(async()=>{
-  if(editingIndex>=0 || dirty || popup.style.display==='block') return;
+  if(editingIndex>=0 || dirty || popup.style.display==='block' || document.getElementById('pasteov').style.display==='block') return;
   try{ const r=await fetch('/api/state'); const s=await r.json();
     if(s.markdown!==lastLoaded){ STATE=s; lastLoaded=s.markdown; blocks=splitBlocks(s.markdown); renderDoc(); renderComments(); setStatus('updated'); }
   }catch(_){}
@@ -421,6 +435,146 @@ async function copyForDocs(){
 // preventDefault on mousedown so clicking the button doesn't clear the text selection
 document.getElementById('copyBtn').addEventListener('mousedown',e=>e.preventDefault());
 document.getElementById('copyBtn').onclick=copyForDocs;
+
+// --- Paste from Docs: rich text (Google Docs or anywhere) → Markdown ---
+// Click the button, then ⌘V into the catch box; the paste event carries text/html,
+// which works in every browser without clipboard-read permissions. With a selection
+// in the preview the paste replaces just those blocks, otherwise the whole document.
+const BLOCKTAGS={P:1,DIV:1,H1:1,H2:1,H3:1,H4:1,H5:1,H6:1,UL:1,OL:1,TABLE:1,BLOCKQUOTE:1,PRE:1,HR:1};
+function containsBlock(el){ for(const c of el.children){ if(BLOCKTAGS[c.tagName]||containsBlock(c)) return true; } return false; }
+function styleOf(el,p){ return (el.style&&el.style[p])||''; }
+// Docs marks bold with font-weight on spans, and wraps the whole clipboard in
+// <b style="font-weight:normal" id="docs-internal-guid-…">, so style beats tag.
+function isBoldEl(el){ const w=styleOf(el,'fontWeight');
+  if(w) return w==='bold'||w==='bolder'||parseInt(w,10)>=600;
+  return el.tagName==='B'||el.tagName==='STRONG'; }
+function isItalEl(el){ return el.tagName==='I'||el.tagName==='EM'||styleOf(el,'fontStyle')==='italic'; }
+function isStrikeEl(el){ const t=el.tagName; return t==='S'||t==='STRIKE'||t==='DEL'||/line-through/.test(styleOf(el,'textDecoration')+styleOf(el,'textDecorationLine')); }
+function isCodeEl(el){ const t=el.tagName; return t==='CODE'||t==='TT'||t==='KBD'||t==='SAMP'||/courier|mono/i.test(styleOf(el,'fontFamily')); }
+// keep leading/trailing whitespace outside the markers: "**bold **" is invalid markdown
+function wrapEdge(s,m){ const a=s.match(/^(\s*)([\s\S]*?)(\s*)$/); return a[2]?a[1]+m+a[2]+m+a[3]:s; }
+function inlineMd(node,o){
+  o=o||{};
+  if(node.nodeType===3){ const t=node.nodeValue.replace(/\u00a0/g,' ').replace(/\s+/g,' ');
+    return o.code?t:t.replace(/([\\`*_])/g,'\\$1'); }
+  if(node.nodeType!==1) return '';
+  const el=node,tag=el.tagName;
+  if(tag==='BR') return '\n';
+  if(tag==='IMG'){ const src=el.getAttribute('src')||''; return src?'!['+(el.getAttribute('alt')||'')+']('+src+')':''; }
+  const code=o.code||isCodeEl(el);
+  let s=Array.from(el.childNodes).map(n=>inlineMd(n,{code:code,noBold:o.noBold})).join('');
+  if(!s.trim()) return s;
+  if(code&&!o.code) s=wrapEdge(s,'`');
+  else if(!code){
+    if(isStrikeEl(el)) s=wrapEdge(s,'~~');
+    if(isItalEl(el)) s=wrapEdge(s,'*');
+    if(isBoldEl(el)&&!o.noBold) s=wrapEdge(s,'**');
+  }
+  const href=el.getAttribute&&el.getAttribute('href');
+  if(tag==='A'&&href&&href[0]!=='#') s='['+s.trim()+']('+href+')';
+  return s;
+}
+function liMd(li){
+  let s=''; for(const c of li.childNodes){
+    if(c.nodeType===1&&(c.tagName==='UL'||c.tagName==='OL')) continue;
+    s+=inlineMd(c,{}); if(c.nodeType===1&&BLOCKTAGS[c.tagName]) s+=' ';
+  }
+  return s.replace(/\s+/g,' ').trim();
+}
+function listMd(list,depth){
+  const pad='  '.repeat(depth); const ord=list.tagName==='OL'; let i=0; const out=[];
+  for(const li of list.children){
+    if(li.tagName==='UL'||li.tagName==='OL'){ out.push(listMd(li,depth+1)); continue; }
+    if(li.tagName!=='LI') continue;
+    i++; const t=liMd(li); if(t) out.push(pad+(ord?i+'. ':'- ')+t);
+    for(const c of li.children) if(c.tagName==='UL'||c.tagName==='OL') out.push(listMd(c,depth+1));
+  }
+  return out.join('\n');
+}
+function cellMd(td,noBold){
+  const parts=[]; let buf='';
+  const flush=()=>{ const t=buf.replace(/\s+/g,' ').trim(); if(t) parts.push(t); buf=''; };
+  for(const n of td.childNodes){
+    if(n.nodeType===1&&(n.tagName==='UL'||n.tagName==='OL')){ flush(); listMd(n,0).split('\n').forEach(l=>{ const t=l.trim(); if(t) parts.push(t); }); }
+    else if(n.nodeType===1&&BLOCKTAGS[n.tagName]){ flush(); buf=Array.from(n.childNodes).map(c=>inlineMd(c,{noBold:noBold})).join(''); flush(); }
+    else buf+=inlineMd(n,{noBold:noBold});
+  }
+  flush();
+  return parts.join('<br>').replace(/\|/g,'\\|');
+}
+function tableMd(tb){
+  const rows=[];
+  for(const tr of tb.querySelectorAll('tr')){
+    const cells=[];
+    for(const td of tr.children) if(td.tagName==='TD'||td.tagName==='TH') cells.push(cellMd(td,rows.length===0));
+    if(cells.length) rows.push(cells);
+  }
+  if(!rows.length) return '';
+  const w=Math.max.apply(null,rows.map(r=>r.length));
+  rows.forEach(r=>{ while(r.length<w) r.push(''); });
+  const line=r=>'| '+r.join(' | ')+' |';
+  return [line(rows[0]),'| '+Array(w).fill('---').join(' | ')+' |'].concat(rows.slice(1).map(line)).join('\n');
+}
+function emitBlocks(container,out){
+  let buf='';
+  const flush=()=>{ const t=buf.trim(); if(t) out.push(t); buf=''; };
+  for(const n of container.childNodes){
+    if(n.nodeType===1&&BLOCKTAGS[n.tagName]){
+      flush(); const el=n,tag=el.tagName;
+      if(tag==='HR') out.push('---');
+      else if(/^H[1-6]$/.test(tag)){ const t=Array.from(el.childNodes).map(c=>inlineMd(c,{noBold:true})).join('').replace(/\s+/g,' ').trim(); if(t) out.push('#'.repeat(+tag[1])+' '+t); }
+      else if(tag==='PRE') out.push('```\n'+el.textContent.replace(/\n+$/,'')+'\n```');
+      else if(tag==='UL'||tag==='OL'){ const s=listMd(el,0); if(s) out.push(s); }
+      else if(tag==='TABLE'){ const s=tableMd(el); if(s) out.push(s); }
+      else if(tag==='BLOCKQUOTE'){ const sub=[]; emitBlocks(el,sub); if(sub.length) out.push(sub.join('\n\n').split('\n').map(l=>('> '+l).trimEnd()).join('\n')); }
+      else if(containsBlock(el)) emitBlocks(el,out);
+      else { const t=Array.from(el.childNodes).map(c=>inlineMd(c,{})).join('').trim(); if(t) out.push(t); }
+    }
+    else if(n.nodeType===1&&containsBlock(n)){ flush(); emitBlocks(n,out); }
+    else buf+=inlineMd(n,{});
+  }
+  flush();
+}
+function htmlToMd(html){
+  const root=document.createElement('div'); root.innerHTML=html;
+  root.querySelectorAll('style,script,meta,link,title').forEach(e=>e.remove());
+  const out=[]; emitBlocks(root,out);
+  return out.join('\n\n');
+}
+
+const pasteov=document.getElementById('pasteov');
+let pasteTarget=null;
+function openPaste(){
+  if(editingIndex>=0) commitEdit();
+  pasteTarget=null; let label='the whole document';
+  const sel=window.getSelection();
+  if(sel && !sel.isCollapsed && sel.rangeCount && preview.contains(sel.anchorNode)){
+    const range=sel.getRangeAt(0); const idx=[];
+    preview.querySelectorAll('.block').forEach(b=>{ if(range.intersectsNode(b)) idx.push(parseInt(b.dataset.i,10)); });
+    if(idx.length){ pasteTarget=idx.sort((a,b)=>a-b); label=idx.length===1?'the selected block':'the '+idx.length+' selected blocks'; }
+  }
+  document.getElementById('pasteLabel').textContent='Pasting will replace '+label+' with the clipboard, converted to Markdown. Esc to cancel.';
+  const c=document.getElementById('pasteCatch'); c.textContent='Press ⌘V / Ctrl+V here…';
+  pasteov.style.display='block'; c.focus();
+}
+function hidePaste(){ pasteov.style.display='none'; pasteTarget=null; }
+document.getElementById('pasteBtn').addEventListener('mousedown',e=>e.preventDefault());
+document.getElementById('pasteBtn').onclick=openPaste;
+document.getElementById('pasteCancel').onclick=hidePaste;
+document.getElementById('pasteCatch').addEventListener('keydown',e=>{ if(e.key==='Escape') hidePaste(); });
+document.getElementById('pasteCatch').addEventListener('paste',e=>{
+  e.preventDefault();
+  const html=e.clipboardData.getData('text/html');
+  const plain=e.clipboardData.getData('text/plain');
+  const md=(html?htmlToMd(html):(plain||'').replace(/\r\n/g,'\n')).trim();
+  if(!md){ setStatus('clipboard was empty'); hidePaste(); return; }
+  const nb=splitBlocks(md);
+  if(pasteTarget) blocks.splice(pasteTarget[0],pasteTarget.length,...nb);
+  else blocks=nb;
+  hidePaste();
+  blocks=splitBlocks(blocks.join('\n\n'));
+  renderDoc(); scheduleSave(true); setStatus('pasted from Docs');
+});
 
 document.getElementById('dlBtn').onclick=()=>{
   if(editingIndex>=0) commitEdit();

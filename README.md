@@ -27,6 +27,7 @@ In the browser:
 - **Edit** — double-click any paragraph/heading/table; it becomes raw Markdown in place; click away (or Esc) and it re-renders. Edits autosave to the file. (A single click never edits, so selecting text for a comment stays easy.)
 - **Suggestions** — Claude's edits render as green (added) / struck (removed). Click one to **Accept**, **Reject**, or **Comment**. They appear live without a reload.
 - **Copy for Docs** — clean rich text on the clipboard for pasting into Google Docs. With a selection, just those blocks.
+- **Paste from Docs** — the reverse: paste rich text copied from Google Docs (or anywhere) and it's converted back to Markdown — headings, bold/italic, links, lists, and tables. With a selection it replaces just those blocks, otherwise the whole document. Handy for editing tables in Docs, where table editing is nicer.
 - **Download .md** — saves the current document.
 
 If the port is taken: `lsof -ti tcp:8042 | xargs kill -9`, or pass `--port N`.
